@@ -1,5 +1,5 @@
-import 'dart:typed_data';
-import 'dart:ui' show Color;
+import 'dart:async';
+import 'dart:convert';
 
 import 'package:audioplayers/audioplayers.dart';
 import 'package:firebase_core/firebase_core.dart';
@@ -13,6 +13,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../constants/api_endpoints.dart';
 import '../core/network/api_service.dart';
 import '../firebase_options.dart';
+import '../models/home_models.dart';
+import '../models/notification_models.dart';
 import '../providers/auth_providers.dart';
 import '../providers/dependency_providers.dart';
 import '../providers/home_providers.dart';
@@ -31,8 +33,77 @@ class InAppAlert {
 
 final inAppAlertProvider = StateProvider<InAppAlert?>((ref) => null);
 
+/// Notification à ouvrir après un toucher sur une alerte FCM.
+final pendingPushNotificationProvider =
+    StateProvider<ParentNotificationItem?>((ref) => null);
+
 /// Anti-doublon FCM + polling (même alerte en < 90 s).
 final Map<String, DateTime> _recentAlertKeys = {};
+
+ActivityType _activityTypeForSource(String source) {
+  if (source == 'finance_payment') return ActivityType.fees;
+  if (source == 'discipline_summons') return ActivityType.meeting;
+  if (source == 'secretariat_communication') return ActivityType.bulletin;
+  if (source == 'discipline_attendance') return ActivityType.info;
+  if (source == 'discipline_incident' ||
+      source == 'discipline_measure' ||
+      source == 'discipline_exit' ||
+      source == 'discipline_justification') {
+    return ActivityType.info;
+  }
+  return ActivityType.info;
+}
+
+ParentNotificationItem? _notificationItemFromData(
+  Map<String, dynamic> data, {
+  String? notificationTitle,
+  String? notificationBody,
+  DateTime? occurredAt,
+}) {
+  final source = (data['type'] ?? data['source'])?.toString().trim() ?? '';
+  final sourceId = data['source_id']?.toString().trim() ?? '';
+  if (source.isEmpty || sourceId.isEmpty) return null;
+
+  final title =
+      notificationTitle ?? data['title']?.toString() ?? 'Institut Kalunga';
+  final body = notificationBody ?? data['body']?.toString() ?? '';
+  return ParentNotificationItem(
+    id: '$source:$sourceId',
+    title: title,
+    subtitle: data['subtitle']?.toString() ?? body,
+    timestampLabel: '',
+    type: _activityTypeForSource(source),
+    body: body,
+    isRead: false,
+    studentId: data['student_id']?.toString() ?? '',
+    studentName: data['student_name']?.toString() ?? '',
+    source: source,
+    sourceId: sourceId,
+    occurredAt: occurredAt ?? DateTime.now(),
+  );
+}
+
+ParentNotificationItem? _notificationItemFromMessage(RemoteMessage message) {
+  return _notificationItemFromData(
+    message.data,
+    notificationTitle: message.notification?.title,
+    notificationBody: message.notification?.body,
+    occurredAt: message.sentTime?.toLocal(),
+  );
+}
+
+String _notificationPayload(ParentNotificationItem item) {
+  return jsonEncode({
+    'source': item.source,
+    'source_id': item.resolvedSourceId,
+    'student_id': item.studentId,
+    'student_name': item.studentName,
+    'title': item.title,
+    'body': item.body,
+    'subtitle': item.subtitle,
+    'occurred_at': item.occurredAt?.toIso8601String(),
+  });
+}
 
 bool _claimAlertKey(String key) {
   final now = DateTime.now();
@@ -60,9 +131,13 @@ Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
 
 /// Publie de VRAIES notifications système Android (son + bannière).
 class PushNotificationService {
-  PushNotificationService({required ApiService api}) : _api = api;
+  PushNotificationService({
+    required ApiService api,
+    required this.onNotificationTap,
+  }) : _api = api;
 
   final ApiService _api;
+  final void Function(ParentNotificationItem item) onNotificationTap;
   final FlutterLocalNotificationsPlugin _local =
       FlutterLocalNotificationsPlugin();
   final AudioPlayer _player = AudioPlayer();
@@ -70,7 +145,9 @@ class PushNotificationService {
   bool _ready = false;
   bool _fcmReady = false;
   bool _audioConfigured = false;
-  bool _tokenRefreshBound = false;
+  StreamSubscription<RemoteMessage>? _foregroundMessageSubscription;
+  StreamSubscription<String>? _tokenRefreshSubscription;
+  String _tokenGuardianId = '';
 
   Future<void> init() async {
     if (_ready || kIsWeb) return;
@@ -83,7 +160,9 @@ class PushNotificationService {
       requestBadgePermission: true,
     );
     await _local.initialize(
-      settings: const InitializationSettings(android: androidInit, iOS: iosInit),
+      settings:
+          const InitializationSettings(android: androidInit, iOS: iosInit),
+      onDidReceiveNotificationResponse: _handleLocalNotificationResponse,
     );
 
     final vibration = Int64List.fromList([0, 500, 200, 500, 200, 500]);
@@ -176,7 +255,9 @@ class PushNotificationService {
       await Permission.notification.request();
     }
 
-    FirebaseMessaging.onMessage.listen((RemoteMessage message) async {
+    await _foregroundMessageSubscription?.cancel();
+    _foregroundMessageSubscription =
+        FirebaseMessaging.onMessage.listen((RemoteMessage message) async {
       final title = message.notification?.title ??
           message.data['title']?.toString() ??
           'Institut Kalunga';
@@ -184,13 +265,14 @@ class PushNotificationService {
           message.data['body']?.toString() ??
           'Vous avez une nouvelle notification.';
       final dedupe = message.data['source_id']?.toString() ??
-          '${title}|$body|${message.messageId ?? ''}';
+          '$title|$body|${message.messageId ?? ''}';
       // En foreground FCM affiche rarement la notif système → on la publie.
       await showLocalAlert(
         title: title,
         body: body,
         dedupeKey: dedupe,
         showInAppBanner: false,
+        notificationItem: _notificationItemFromMessage(message),
       );
     });
 
@@ -213,6 +295,7 @@ class PushNotificationService {
     required String title,
     required String body,
     String? icon,
+    ParentNotificationItem? notificationItem,
   }) async {
     final vibration = Int64List.fromList([0, 500, 200, 500, 200, 500]);
     final androidDetails = AndroidNotificationDetails(
@@ -225,7 +308,7 @@ class PushNotificationService {
       enableVibration: true,
       vibrationPattern: vibration,
       category: AndroidNotificationCategory.message,
-      visibility: NotificationVisibility.public,
+      visibility: NotificationVisibility.private,
       ticker: 'Alerte Institut Kalunga',
       styleInformation: BigTextStyleInformation(body, contentTitle: title),
       audioAttributesUsage: AudioAttributesUsage.notificationRingtone,
@@ -251,7 +334,30 @@ class PushNotificationService {
         android: androidDetails,
         iOS: iosDetails,
       ),
+      payload: notificationItem == null
+          ? null
+          : _notificationPayload(notificationItem),
     );
+  }
+
+  void _handleLocalNotificationResponse(NotificationResponse response) {
+    final payload = response.payload?.trim() ?? '';
+    if (payload.isEmpty) return;
+    try {
+      final raw = jsonDecode(payload);
+      if (raw is! Map) return;
+      final data = Map<String, dynamic>.from(raw);
+      final occurredAt = DateTime.tryParse(
+        data['occurred_at']?.toString() ?? '',
+      )?.toLocal();
+      final item = _notificationItemFromData(
+        data,
+        notificationTitle: data['title']?.toString(),
+        notificationBody: data['body']?.toString(),
+        occurredAt: occurredAt,
+      );
+      if (item != null) onNotificationTap(item);
+    } catch (_) {}
   }
 
   /// Une seule notification système (style WhatsApp).
@@ -261,6 +367,7 @@ class PushNotificationService {
     void Function(InAppAlert alert)? onInApp,
     String? dedupeKey,
     bool showInAppBanner = false,
+    ParentNotificationItem? notificationItem,
   }) async {
     if (kIsWeb) return false;
     if (!_ready) await init();
@@ -273,7 +380,8 @@ class PushNotificationService {
       onInApp?.call(alert);
     }
 
-    if (defaultTargetPlatform == TargetPlatform.android) {
+    if (defaultTargetPlatform == TargetPlatform.android &&
+        notificationItem == null) {
       try {
         await Permission.notification.request();
         const channel = MethodChannel(_kNativeAlertsChannel);
@@ -288,7 +396,11 @@ class PushNotificationService {
 
     await _playAlertTone();
     try {
-      await _postSystemNotification(title: title, body: body);
+      await _postSystemNotification(
+        title: title,
+        body: body,
+        notificationItem: notificationItem,
+      );
       return true;
     } catch (_) {
       try {
@@ -296,6 +408,7 @@ class PushNotificationService {
           title: title,
           body: body,
           icon: '@mipmap/ic_launcher',
+          notificationItem: notificationItem,
         );
         return true;
       } catch (_) {
@@ -345,9 +458,12 @@ class PushNotificationService {
         token: token,
       );
 
-      if (!_tokenRefreshBound) {
-        _tokenRefreshBound = true;
-        FirebaseMessaging.instance.onTokenRefresh.listen((newToken) {
+      if (_tokenGuardianId != guardianPublicId ||
+          _tokenRefreshSubscription == null) {
+        await _tokenRefreshSubscription?.cancel();
+        _tokenGuardianId = guardianPublicId;
+        _tokenRefreshSubscription =
+            FirebaseMessaging.instance.onTokenRefresh.listen((newToken) {
           registerDeviceToken(
             guardianPublicId: guardianPublicId,
             token: newToken,
@@ -357,6 +473,19 @@ class PushNotificationService {
     } catch (e, st) {
       debugPrint('FCM syncDeviceToken failed: $e\n$st');
     }
+  }
+
+  Future<void> clearGuardian() async {
+    _tokenGuardianId = '';
+    await _tokenRefreshSubscription?.cancel();
+    _tokenRefreshSubscription = null;
+  }
+
+  Future<void> dispose() async {
+    await clearGuardian();
+    await _foregroundMessageSubscription?.cancel();
+    _foregroundMessageSubscription = null;
+    await _player.dispose();
   }
 
   Future<void> registerDeviceToken({
@@ -384,28 +513,60 @@ class PushNotificationService {
   }
 }
 
-final pushNotificationServiceProvider = Provider<PushNotificationService>((ref) {
-  return PushNotificationService(api: ref.watch(apiServiceProvider));
+final pushNotificationServiceProvider =
+    Provider<PushNotificationService>((ref) {
+  final service = PushNotificationService(
+    api: ref.watch(apiServiceProvider),
+    onNotificationTap: (item) {
+      ref.read(bottomNavIndexProvider.notifier).state = 2;
+      ref.read(pendingPushNotificationProvider.notifier).state = item;
+    },
+  );
+  ref.onDispose(service.dispose);
+  return service;
 });
 
 final pushBootstrapProvider = Provider<void>((ref) {
-  ref.listen<AuthSessionState>(authSessionProvider, (prev, next) async {
-    if (next is! AuthSessionAuthenticated) return;
-    if (kIsWeb) return;
-    final push = ref.read(pushNotificationServiceProvider);
-    await push.init();
-    await push.syncDeviceToken(next.identity.guardianPublicId);
+  void openFromMessage(RemoteMessage message) {
+    ref.invalidate(homeDashboardProvider);
+    ref.invalidate(parentNotificationsProvider);
+    final item = _notificationItemFromMessage(message);
+    if (item != null) {
+      ref.read(bottomNavIndexProvider.notifier).state = 2;
+      ref.read(pendingPushNotificationProvider.notifier).state = item;
+    }
+  }
 
-    try {
-      FirebaseMessaging.onMessageOpenedApp.listen((_) {
-        ref.invalidate(homeDashboardProvider);
-        ref.invalidate(parentNotificationsProvider);
-      });
-      final initial = await FirebaseMessaging.instance.getInitialMessage();
-      if (initial != null) {
-        ref.invalidate(homeDashboardProvider);
-        ref.invalidate(parentNotificationsProvider);
+  StreamSubscription<RemoteMessage>? openedSubscription;
+  if (!kIsWeb) {
+    openedSubscription =
+        FirebaseMessaging.onMessageOpenedApp.listen(openFromMessage);
+  }
+  ref.onDispose(() => openedSubscription?.cancel());
+
+  var initialMessageHandled = false;
+  ref.listen<AuthSessionState>(
+    authSessionProvider,
+    (prev, next) async {
+      if (kIsWeb) return;
+      final push = ref.read(pushNotificationServiceProvider);
+      if (next is! AuthSessionAuthenticated) {
+        await push.clearGuardian();
+        return;
       }
-    } catch (_) {}
-  }, fireImmediately: true);
+      await push.init();
+      await push.syncDeviceToken(next.identity.guardianPublicId);
+
+      if (!initialMessageHandled) {
+        initialMessageHandled = true;
+        try {
+          final initial = await FirebaseMessaging.instance.getInitialMessage();
+          if (initial != null) {
+            openFromMessage(initial);
+          }
+        } catch (_) {}
+      }
+    },
+    fireImmediately: true,
+  );
 });

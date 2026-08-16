@@ -24,7 +24,13 @@ Future<void> openNotificationDetail(
     case 'discipline_incident':
       screen = DisciplineDetailScreen(kind: 'incident', publicId: id);
     case 'discipline_attendance':
-      screen = _GenericNotificationDetailScreen(item: item);
+      screen = DisciplineDetailScreen(kind: 'attendance', publicId: id);
+    case 'discipline_measure':
+      screen = DisciplineDetailScreen(kind: 'measure', publicId: id);
+    case 'discipline_exit':
+      screen = DisciplineDetailScreen(kind: 'exit', publicId: id);
+    case 'discipline_justification':
+      screen = DisciplineDetailScreen(kind: 'justification', publicId: id);
     default:
       // Repli : message générique avec le body déjà chargé.
       screen = _GenericNotificationDetailScreen(item: item);

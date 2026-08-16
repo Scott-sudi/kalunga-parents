@@ -28,6 +28,16 @@ class _DisciplineDetailScreenState
   late final Future<DisciplineDetail> _future;
   var _refreshed = false;
 
+  String get _screenTitle => switch (widget.kind) {
+        'summons' => 'Convocation',
+        'incident' => 'Incident',
+        'measure' => 'Mesure disciplinaire',
+        'exit' => 'Sortie autorisée',
+        'justification' => 'Justification d’absence',
+        'attendance' => 'Présence',
+        _ => 'Discipline',
+      };
+
   @override
   void initState() {
     super.initState();
@@ -42,7 +52,7 @@ class _DisciplineDetailScreenState
     return Scaffold(
       backgroundColor: context.appBackground,
       appBar: AppBar(
-        title: Text(widget.kind == 'summons' ? 'Convocation' : 'Incident'),
+        title: Text(_screenTitle),
         backgroundColor: context.appCard,
         foregroundColor: context.appTextPrimary,
         elevation: 0,
@@ -60,7 +70,8 @@ class _DisciplineDetailScreenState
               child: Padding(
                 padding: const EdgeInsets.all(24),
                 child: Text(
-                  snapshot.error?.toString() ?? 'Impossible de charger le détail.',
+                  snapshot.error?.toString() ??
+                      'Impossible de charger le détail.',
                   textAlign: TextAlign.center,
                 ),
               ),
@@ -81,9 +92,20 @@ class _DisciplineDetailScreenState
             if (d.timeLabel.isNotEmpty) ('Heure', d.timeLabel),
             if (d.location.isNotEmpty) ('Lieu', d.location),
             if (d.reason.isNotEmpty) ('Motif', d.reason),
+            if (d.measureType.isNotEmpty) ('Mesure', d.measureType),
+            if (d.roleLabel.isNotEmpty) ('Rôle dans l’incident', d.roleLabel),
             if (d.severityLabel.isNotEmpty) ('Gravité', d.severityLabel),
             if (d.categoryLabel.isNotEmpty) ('Catégorie', d.categoryLabel),
             if (d.statusLabel.isNotEmpty) ('Statut', d.statusLabel),
+            if (d.endDateLabel.isNotEmpty) ('Date de fin', d.endDateLabel),
+            if (d.actualExitTimeLabel.isNotEmpty)
+              ('Sortie effective', d.actualExitTimeLabel),
+            if (d.actualReturnTimeLabel.isNotEmpty)
+              ('Retour effectif', d.actualReturnTimeLabel),
+            if (d.lateMinutesLabel.isNotEmpty && d.lateMinutesLabel != '0')
+              ('Retard', '${d.lateMinutesLabel} minute(s)'),
+            if (d.reviewNote.isNotEmpty)
+              ('Décision / observation', d.reviewNote),
           ];
 
           return ListView(

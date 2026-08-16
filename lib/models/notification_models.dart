@@ -33,6 +33,7 @@ class ParentNotificationItem extends Equatable {
   final String studentName;
   final String source;
   final String sourceId;
+
   /// Instant réel pour tri (plus récent en haut).
   final DateTime? occurredAt;
 
@@ -52,6 +53,9 @@ class ParentNotificationItem extends Equatable {
       case 'discipline_summons':
       case 'discipline_incident':
       case 'discipline_attendance':
+      case 'discipline_measure':
+      case 'discipline_exit':
+      case 'discipline_justification':
         // Présence, convocations, incidents → onglet Scolaires.
         return 'scolaires';
       case 'secretariat_communication':
@@ -78,6 +82,15 @@ class ParentNotificationItem extends Equatable {
         if (source == 'discipline_attendance') {
           return const Color(0xFF2E7D32);
         }
+        if (source == 'discipline_exit') {
+          return const Color(0xFF1565C0);
+        }
+        if (source == 'discipline_justification') {
+          return const Color(0xFF6A1B9A);
+        }
+        if (source == 'discipline_measure') {
+          return const Color(0xFFEF6C00);
+        }
         return source.startsWith('discipline')
             ? const Color(0xFFC62828)
             : AppColors.primaryLight;
@@ -94,6 +107,12 @@ class ParentNotificationItem extends Equatable {
         return Icons.warning_amber_rounded;
       case 'discipline_attendance':
         return Icons.how_to_reg_outlined;
+      case 'discipline_measure':
+        return Icons.gavel_outlined;
+      case 'discipline_exit':
+        return Icons.exit_to_app_outlined;
+      case 'discipline_justification':
+        return Icons.fact_check_outlined;
       case 'secretariat_communication':
         return type == ActivityType.bulletin
             ? Icons.description_outlined

@@ -2,6 +2,16 @@ import 'package:equatable/equatable.dart';
 
 import '../config/api_config.dart';
 
+String _displayDate(dynamic raw) {
+  final value = raw?.toString().trim() ?? '';
+  if (value.isEmpty) return '';
+  final parsed = DateTime.tryParse(value);
+  if (parsed == null) return value;
+  final day = parsed.day.toString().padLeft(2, '0');
+  final month = parsed.month.toString().padLeft(2, '0');
+  return '$day/$month/${parsed.year}';
+}
+
 class CommunicationDetail extends Equatable {
   const CommunicationDetail({
     required this.id,
@@ -32,7 +42,8 @@ class CommunicationDetail extends Equatable {
       priorityLabel: json['priority_label']?.toString() ?? '',
       publishedLabel: json['published_label']?.toString() ?? '',
       studentName: json['student_name']?.toString() ?? '',
-      attachmentUrl: ApiConfig.resolveMediaUrl(json['attachment_url']?.toString()),
+      attachmentUrl:
+          ApiConfig.resolveMediaUrl(json['attachment_url']?.toString()),
     );
   }
 
@@ -110,6 +121,13 @@ class DisciplineDetail extends Equatable {
     this.reason = '',
     this.severityLabel = '',
     this.categoryLabel = '',
+    this.measureType = '',
+    this.endDateLabel = '',
+    this.actualExitTimeLabel = '',
+    this.actualReturnTimeLabel = '',
+    this.reviewNote = '',
+    this.roleLabel = '',
+    this.lateMinutesLabel = '',
   });
 
   final String id;
@@ -124,6 +142,13 @@ class DisciplineDetail extends Equatable {
   final String reason;
   final String severityLabel;
   final String categoryLabel;
+  final String measureType;
+  final String endDateLabel;
+  final String actualExitTimeLabel;
+  final String actualReturnTimeLabel;
+  final String reviewNote;
+  final String roleLabel;
+  final String lateMinutesLabel;
 
   factory DisciplineDetail.fromJson(Map<String, dynamic> json) {
     return DisciplineDetail(
@@ -133,14 +158,41 @@ class DisciplineDetail extends Equatable {
       content: json['content']?.toString() ?? '',
       studentName: json['student_name']?.toString() ?? '',
       statusLabel: json['status_label']?.toString() ?? '',
-      dateLabel: (json['summon_date_label'] ?? json['incident_date_label'])
+      dateLabel: _displayDate(
+        json['date_label'] ??
+            json['summon_date_label'] ??
+            json['incident_date_label'] ??
+            json['attendance_date_label'] ??
+            json['exit_date_label'] ??
+            json['decision_date_label'] ??
+            json['start_date'] ??
+            json['date'] ??
+            json['attendance_date'],
+      ),
+      timeLabel: (json['time_label'] ??
+                  json['summon_time_label'] ??
+                  json['attendance_time_label'] ??
+                  json['exit_time_label'] ??
+                  json['planned_exit_time'] ??
+                  json['arrival_time'])
               ?.toString() ??
           '',
-      timeLabel: json['summon_time_label']?.toString() ?? '',
       location: json['location']?.toString() ?? '',
-      reason: json['reason']?.toString() ?? '',
+      reason: (json['reason'] ??
+                  json['motif'] ??
+                  json['decision_label'] ??
+                  json['measure_label'])
+              ?.toString() ??
+          '',
       severityLabel: json['severity_label']?.toString() ?? '',
       categoryLabel: json['category_label']?.toString() ?? '',
+      measureType: json['measure_type']?.toString() ?? '',
+      endDateLabel: _displayDate(json['end_date']),
+      actualExitTimeLabel: json['actual_exit_time']?.toString() ?? '',
+      actualReturnTimeLabel: json['actual_return_time']?.toString() ?? '',
+      reviewNote: json['review_note']?.toString() ?? '',
+      roleLabel: json['role_label']?.toString() ?? '',
+      lateMinutesLabel: json['late_minutes']?.toString() ?? '',
     );
   }
 
