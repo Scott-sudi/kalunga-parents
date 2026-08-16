@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../constants/app_constants.dart';
 import '../../core/l10n/app_strings.dart';
@@ -198,7 +199,12 @@ class AccountScreen extends ConsumerWidget {
                       ),
                     ],
                   ),
-                  const SizedBox(height: 24),
+                  const SizedBox(height: 28),
+                  _DeveloperCredit(
+                    label: s.developedBy,
+                    muted: textSecondary,
+                  ),
+                  const SizedBox(height: 32),
                 ],
               ),
             ),
@@ -555,6 +561,61 @@ class _ProfileBlock extends ConsumerWidget {
 }
 
 enum _PhotoAction { gallery, camera, remove }
+
+class _DeveloperCredit extends StatelessWidget {
+  const _DeveloperCredit({
+    required this.label,
+    required this.muted,
+  });
+
+  final String label;
+  final Color muted;
+
+  Future<void> _openSite() async {
+    final uri = Uri.parse(AppConstants.developerUrl);
+    await launchUrl(uri, mode: LaunchMode.externalApplication);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        child: Text.rich(
+          TextSpan(
+            style: TextStyle(
+              color: muted,
+              fontSize: 12.5,
+              fontWeight: FontWeight.w400,
+              height: 1.35,
+            ),
+            children: [
+              TextSpan(text: '$label '),
+              WidgetSpan(
+                alignment: PlaceholderAlignment.baseline,
+                baseline: TextBaseline.alphabetic,
+                child: GestureDetector(
+                  onTap: _openSite,
+                  child: Text(
+                    AppConstants.developerName,
+                    style: TextStyle(
+                      color: AppColors.primary,
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w600,
+                      decoration: TextDecoration.underline,
+                      decorationColor: AppColors.primary.withOpacity(0.55),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          textAlign: TextAlign.center,
+        ),
+      ),
+    );
+  }
+}
 
 class _SectionTitle extends StatelessWidget {
   const _SectionTitle(this.text, {required this.color});

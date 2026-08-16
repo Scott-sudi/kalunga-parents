@@ -36,6 +36,10 @@ abstract final class AppConstants {
 
   static const String logoAsset = 'assets/branding/logo.png';
 
+  /// Signature éditeur (onglet Mon compte).
+  static const String developerName = 'Numeris';
+  static const String developerUrl = 'https://www.numerisdev.com';
+
   /// Rayons conformes à la maquette.
   static const double radiusLarge = 16;
   static const double radiusMedium = 12;

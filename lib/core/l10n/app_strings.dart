@@ -39,6 +39,8 @@ class AppStrings {
   String get themeDark => _t('Sombre', 'Dark', 'Giza');
   String get themeSystem => _t('Système', 'System', 'Mfumo');
   String get others => _t('Autres', 'Other', 'Nyingine');
+  String get developedBy =>
+      _t('Développé par', 'Developed by', 'Imetengenezwa na');
   String get helpSupport =>
       _t('Aide et support', 'Help & support', 'Msaada');
   String get logout => _t('Déconnexion', 'Log out', 'Toka');
